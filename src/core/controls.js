@@ -22,7 +22,9 @@ import * as THREE from 'three';
  *                              do Minecraft; Espaco duas vezes faz o mesmo)
  *    voando                 -> A sobe, B ou clique no analogico direito desce
  *                              (RT / LT tambem)
- *    andando                -> gravidade, olhos a ALTURA_OLHOS do piso, A pula
+ *    andando                -> gravidade, olhos a ALTURA_OLHOS do piso, A pula,
+ *                              Ctrl (ou B) agacha; o mouse trava no centro
+ *                              da tela (Esc solta, clique trava)
  *    clique no analogico esq.-> correr
  *    botoes (A, B, X, Y, LB, RB, direcional, Start, View) -> `aoBotao(nome)`,
  *    na borda de descida; quem chama decide o que cada um faz no HUD
@@ -55,14 +57,44 @@ import * as THREE from 'three';
  */
 const RAIO_CAMERA = 0.3;
 // Modo andar. [ADOTADO] olhos de um adulto de 1,75 m; a gravidade e o pulo sao
-// de jogo, nao de fisica: 22 m/s² e 7 m/s dao um pulo de 1,1 m em 0,6 s (com
-// 9,81 o pulo parece flutuar). Degrau: o espelho de dois degraus de escada.
+// de jogo, nao de fisica (com 9,81 o pulo parece flutuar). Degrau: o espelho
+// de dois degraus de escada.
 const ALTURA_OLHOS = 1.7;
-const GRAVIDADE = 22;
-const VEL_PULO = 7;
 const DEGRAU = 0.6;
-const VEL_ANDAR = 4.5;        // m/s; correndo, vezes multiplicadorCorrida
 const TOQUE_DUPLO = 0.35;     // s entre dois toques de A (ou Espaco)
+/**
+ * A PASSADA, no jeito do Minecraft (convertido de bloco/tick para m/s, com
+ * 1 bloco = 1 m e 20 ticks/s). O que da a sensacao dele:
+ *  - arranca e para quase seco no chao (atrito 0,546 por tick → 12/s), mas no
+ *    ar quase nao ha atrito nem controle (0,91 por tick → 1,9/s): o pulo
+ *    correndo leva o embalo, e nao se muda de rumo no meio do salto;
+ *  - correr e so 30 % mais rapido, e abre o campo de visao;
+ *  - Ctrl agachado: anda devagar e baixa os olhos;
+ *  - a cabeca balanca com a distancia andada (nao com o tempo): sobe e desce
+ *    duas vezes por ciclo, vai de lado e rola um pouco, e o balanco some suave
+ *    ao parar ou sair do chao.
+ * [ADOTADO] valores do jogo: andar 4,317 m/s, correr 5,612, agachado 1,295;
+ * pulo de 1,25 m (gravidade 32 m/s², 0,08 b/tick²; v0 = raiz(2·32·1,25)).
+ */
+const PASSADA = {
+  velAndar: 4.32,
+  fatorCorrida: 1.3,
+  fatorAgachado: 0.3,
+  atritoChao: 12,             // 1/s
+  atritoAr: 1.9,              // 1/s
+  gravidade: 32,
+  velPulo: 9.4,               // m/s → 1,16 m medido a 60 fps (a integracao por quadro come o resto)
+  baixaAgachado: 0.35,        // m que os olhos descem agachado
+  fovCorrida: 1.15,           // campo de visao correndo / andando
+  passoBalanco: 1.67,         // m por passo (meio ciclo do balanco)
+  balancoY: 0.07,             // m — descida da cabeca a cada passo
+  balancoX: 0.035,            // m — ida de lado
+  balancoRolo: 0.045,         // rad (~2,6°)
+  balancoPitch: 0.03,         // rad (~1,7°)
+};
+const GRAVIDADE = PASSADA.gravidade;
+const VEL_PULO = PASSADA.velPulo;
+const VEL_ANDAR = PASSADA.velAndar;
 export function criarControlesLivres(camera, dom, opts = {}) {
   const {
     alturaMinima = 0.6,
@@ -93,6 +125,15 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     andando: false,           // false = voando (o modo em que a camera nasce)
     noChao: false,
     toque: -1,                // instante do ultimo toque de A/Espaco (s)
+    // passada: o balanco e o campo de visao sao somados por cima da posicao
+    // fisica e tirados no quadro seguinte, para a colisao nunca os ver
+    fase: 0,                  // distancia andada / passoBalanco
+    balanco: 0,               // 0..1, intensidade atual do balanco
+    ofs: new THREE.Vector3(), // deslocamento do balanco aplicado agora
+    rolo: 0,
+    inclina: 0,
+    fovExtra: 0,              // graus somados ao fov correndo
+    agachado: 0,              // 0..1
   };
 
   function definirModo(andando) {
@@ -100,8 +141,32 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     est.andando = andando;
     est.noChao = false;
     est.vel.y = 0;
+    if (andando) travarMouse(); else soltarMouse();
     api.aoModo?.(andando);
   }
+
+  /* ----------------------------------------------------------------------
+   *  Mouse travado no centro (modo andar), como em jogo de tiro: o cursor
+   *  some e mexer o mouse vira a cabeca sem arrastar (sem mira, a pedido).
+   *  Esc solta (o navegador faz isso sozinho); clique na tela, ainda
+   *  andando, trava de novo. O navegador so trava a partir de um gesto
+   *  (tecla ou clique): pelo A do controle, o clique seguinte trava.
+   * -------------------------------------------------------------------- */
+  const travado = () => document.pointerLockElement === dom;
+  function travarMouse() {
+    if (!est.ativo || travado() || !dom.requestPointerLock) return;
+    try { dom.requestPointerLock()?.catch?.(() => {}); } catch { /* sem gesto: o clique trava */ }
+  }
+  function soltarMouse() { if (travado()) document.exitPointerLock(); }
+  document.addEventListener('pointerlockchange', () => {
+    est.arrasto = null;
+    dom.style.cursor = '';
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!travado() || !est.ativo) return;
+    est.yawAlvo -= e.movementX * sensibilidade;
+    est.pitchAlvo = THREE.MathUtils.clamp(est.pitchAlvo - e.movementY * sensibilidade, -LIMITE_PITCH, LIMITE_PITCH);
+  });
   /** Toque de A ou Espaco: o segundo dentro de TOQUE_DUPLO troca o modo. */
   function toque() {
     if (!est.ativo || est.voo) return;
@@ -167,7 +232,46 @@ export function criarControlesLivres(camera, dom, opts = {}) {
   }
 
   function aplicar() {
-    camera.quaternion.setFromEuler(new THREE.Euler(est.pitch, est.yaw, 0, 'YXZ'));
+    camera.quaternion.setFromEuler(new THREE.Euler(est.pitch + est.inclina, est.yaw, est.rolo, 'YXZ'));
+  }
+
+  /** Tira o balanco e o fov da corrida (antes de mover a camera por fora). */
+  function tirarPassada() {
+    camera.position.sub(est.ofs);
+    est.ofs.set(0, 0, 0);
+    est.rolo = est.inclina = 0;
+    est.balanco = 0;
+    if (est.fovExtra) { camera.fov -= est.fovExtra; est.fovExtra = 0; camera.updateProjectionMatrix(); }
+  }
+
+  /** Balanco de cabeca e fov da corrida, depois da fisica do quadro. */
+  function porPassada(dt, vChao, correndo) {
+    const P = PASSADA;
+    // intensidade: a velocidade no chao em relacao a de andar; some no ar
+    const alvo = est.andando && est.noChao ? Math.min(1.3, vChao / P.velAndar) : 0;
+    est.balanco += (alvo - est.balanco) * (1 - Math.exp(-10 * dt));
+    if (est.andando && est.noChao) est.fase += (vChao * dt) / P.passoBalanco;
+    const b = est.balanco;
+    const s = Math.sin(est.fase * Math.PI);
+    const c = Math.cos(est.fase * Math.PI);
+    // lado: um ciclo a cada dois passos; altura: desce a cada passo
+    direita.set(Math.cos(est.yaw), 0, -Math.sin(est.yaw));
+    est.ofs.copy(direita).multiplyScalar(s * P.balancoX * b);
+    est.ofs.y = -Math.abs(c) * P.balancoY * b - est.agachado * P.baixaAgachado;
+    camera.position.add(est.ofs);
+    est.rolo = s * P.balancoRolo * b;
+    est.inclina = -Math.abs(Math.cos(est.fase * Math.PI - 0.2)) * P.balancoPitch * b;
+    // campo de visao: abre correndo, de verdade (embalo acima do de andar)
+    const base = camera.fov - est.fovExtra;
+    const fracao = est.andando && correndo && vChao > P.velAndar * 0.8 ? 1 : 0;
+    const alvoFov = base * (P.fovCorrida - 1) * fracao;
+    const novo = est.fovExtra + (alvoFov - est.fovExtra) * (1 - Math.exp(-8 * dt));
+    if (Math.abs(novo - est.fovExtra) > 1e-4 || (alvoFov === 0 && est.fovExtra)) {
+      est.fovExtra = Math.abs(novo) < 1e-3 && alvoFov === 0 ? 0 : novo;
+      camera.fov = base + est.fovExtra;
+      camera.updateProjectionMatrix();
+    }
+    aplicar();
   }
 
   /* ======================================================================
@@ -177,7 +281,8 @@ export function criarControlesLivres(camera, dom, opts = {}) {
 
   dom.addEventListener('pointerdown', (e) => {
     est.voo = null;                              // mexeu: o voo para
-    if (!est.ativo) return;
+    if (!est.ativo || travado()) return;
+    if (est.andando && e.button === 0) { travarMouse(); return; }
     est.arrasto = e.button === 0 ? 'olhar' : 'pan';
     est.ultimo.x = e.clientX;
     est.ultimo.y = e.clientY;
@@ -294,8 +399,17 @@ export function criarControlesLivres(camera, dom, opts = {}) {
   }
 
   function update(dt) {
+    // a fisica anda sobre a posicao sem o balanco do quadro anterior
+    camera.position.sub(est.ofs);
+    est.ofs.set(0, 0, 0);
+    const r = mover(dt);
+    porPassada(dt, r?.vChao ?? 0, !!r?.correndo);
+  }
+
+  function mover(dt) {
     const gp = lerControle();
     if (est.voo) {
+      tirarPassada();
       const v = est.voo;
       v.t = Math.min(1, v.t + dt / v.duracao);
       const e = v.t < 0.5 ? 4 * v.t ** 3 : 1 - (-2 * v.t + 2) ** 3 / 2;
@@ -312,7 +426,8 @@ export function criarControlesLivres(camera, dom, opts = {}) {
       est.pitchAlvo = THREE.MathUtils.clamp(est.pitchAlvo - gp.ry * 1.7 * dt, -LIMITE_PITCH, LIMITE_PITCH);
     }
     // --- olhar: aproxima o angulo do alvo, dando um leve peso ao giro ---
-    const k = 1 - Math.pow(suavizacaoOlhar, dt * 60);
+    // com o mouse travado o olhar e direto, como em jogo de tiro
+    const k = travado() ? 1 : 1 - Math.pow(suavizacaoOlhar, dt * 60);
     est.yaw += (est.yawAlvo - est.yaw) * k;
     est.pitch += (est.pitchAlvo - est.pitch) * k;
     aplicar();
@@ -347,20 +462,27 @@ export function criarControlesLivres(camera, dom, opts = {}) {
 
     if (est.andando) {
       // --- andando: so o plano do chao acelera; a vertical e gravidade e pulo ---
+      const P = PASSADA;
       const pular = dir.y > 0.5;
+      const agachar = dir.y < -0.5;
+      est.agachado += ((agachar ? 1 : 0) - est.agachado) * (1 - Math.exp(-14 * dt));
       dir.y = 0;
       let vy = est.vel.y;
       est.vel.y = 0;
-      const vMaxChao = VEL_ANDAR * (correndo ? multiplicadorCorrida : 1) * escalaControle;
-      if (dir.lengthSq() > 0) {
-        dir.normalize();
-        est.vel.addScaledVector(dir, aceleracao * dt);
-        if (est.vel.length() > vMaxChao) est.vel.setLength(vMaxChao);
-      }
-      est.vel.multiplyScalar(Math.exp(-atrito * dt));
+      const correr = correndo && !agachar;
+      const vMaxChao = VEL_ANDAR * (correr ? P.fatorCorrida : 1) * (agachar ? P.fatorAgachado : 1) * escalaControle;
+      // v' = k·(vMax·dir − v): no chao chega ao embalo (e para) em ~0,25 s;
+      // no ar k e baixo, entao o salto guarda o embalo e mal muda de rumo
+      const k = est.noChao ? P.atritoChao : P.atritoAr;
+      const decai = Math.exp(-k * dt);
+      if (dir.lengthSq() > 0) dir.normalize();
+      const alvo = dir.multiplyScalar(vMaxChao);
+      if (!est.noChao && alvo.lengthSq() === 0) alvo.copy(est.vel);   // sem tecla, no ar, nada freia
+      est.vel.multiplyScalar(decai).addScaledVector(alvo, 1 - decai);
       if (est.vel.lengthSq() < 1e-6) est.vel.set(0, 0, 0);
       if (pular && est.noChao) { vy = VEL_PULO; est.noChao = false; }
       est.vel.y = vy - GRAVIDADE * dt;
+      const vChao = Math.hypot(est.vel.x, est.vel.z);
 
       andar(est.vel.clone().multiplyScalar(dt));
       const p = camera.position;
@@ -371,8 +493,9 @@ export function criarControlesLivres(camera, dom, opts = {}) {
         est.vel.y = 0;
         est.noChao = true;
       } else est.noChao = false;
-      return;
+      return { vChao, correndo: correr };
     }
+    est.agachado = 0;
 
     const vMax = velocidadeMax * (correndo ? multiplicadorCorrida : 1) * escalaControle;
 
@@ -394,6 +517,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
 
   /** Reposiciona a camera olhando para um ponto. */
   function irPara(posicao, olharPara) {
+    tirarPassada();
     camera.position.copy(posicao);
     est.voo = null;
     definirModo(false);
@@ -422,7 +546,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     piso,
     get andando() { return est.andando; },
     set andando(v) { definirModo(!!v); },
-    set ativo(v) { est.ativo = v; if (!v) est.vel.set(0, 0, 0); },
+    set ativo(v) { est.ativo = v; if (!v) { est.vel.set(0, 0, 0); tirarPassada(); est.agachado = 0; soltarMouse(); } },
     estado: est,
   };
   return api;

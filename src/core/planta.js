@@ -56,6 +56,8 @@ export function criarVistaPlanta(cena, { limites, aoMudar } = {}) {
 
   function ativar() {
     const est = controls.estado;
+    // desativar antes de guardar: tira o balanco da passada e o fov da corrida
+    controls.ativo = false;
     salvo = {
       pos: camera.position.clone(), fov: camera.fov, near: camera.near, far: camera.far,
       fog: scene.fog, yaw: est.yaw, pitch: est.pitch,
