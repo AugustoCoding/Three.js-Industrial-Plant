@@ -85,12 +85,14 @@ const PASSADA = {
   gravidade: 32,
   velPulo: 9.4,               // m/s → 1,16 m medido a 60 fps (a integracao por quadro come o resto)
   baixaAgachado: 0.35,        // m que os olhos descem agachado
-  fovCorrida: 1.15,           // campo de visao correndo / andando
+  // os do jogo (fov +15 %, 7 cm, 2,6°) ficaram exagerados numa maquete:
+  // reduzidos a pedido para cerca de um terco
+  fovCorrida: 1.05,           // campo de visao correndo / andando
   passoBalanco: 1.67,         // m por passo (meio ciclo do balanco)
-  balancoY: 0.07,             // m — descida da cabeca a cada passo
-  balancoX: 0.035,            // m — ida de lado
-  balancoRolo: 0.045,         // rad (~2,6°)
-  balancoPitch: 0.03,         // rad (~1,7°)
+  balancoY: 0.025,            // m — descida da cabeca a cada passo
+  balancoX: 0.012,            // m — ida de lado
+  balancoRolo: 0.012,         // rad (~0,7°)
+  balancoPitch: 0.008,        // rad (~0,5°)
 };
 const GRAVIDADE = PASSADA.gravidade;
 const VEL_PULO = PASSADA.velPulo;
@@ -248,7 +250,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
   function porPassada(dt, vChao, correndo) {
     const P = PASSADA;
     // intensidade: a velocidade no chao em relacao a de andar; some no ar
-    const alvo = est.andando && est.noChao ? Math.min(1.3, vChao / P.velAndar) : 0;
+    const alvo = est.andando && est.noChao ? Math.min(1, vChao / P.velAndar) : 0;
     est.balanco += (alvo - est.balanco) * (1 - Math.exp(-10 * dt));
     if (est.andando && est.noChao) est.fase += (vChao * dt) / P.passoBalanco;
     const b = est.balanco;
