@@ -24,7 +24,9 @@ import * as THREE from 'three';
  *                              (RT / LT tambem)
  *    andando                -> gravidade, olhos a ALTURA_OLHOS do piso, A pula,
  *                              Ctrl (ou B) agacha; o mouse trava no centro
- *                              da tela (Esc solta, clique trava)
+ *                              da tela (Esc solta, clique trava); o RT nao
+ *                              sobe: fica em `estado.gatilhoDireito` e ergue
+ *                              o braco (site/braco.js)
  *    clique no analogico esq.-> correr
  *    botoes (A, B, X, Y, LB, RB, direcional, Start, View) -> `aoBotao(nome)`,
  *    na borda de descida; quem chama decide o que cada um faz no HUD
@@ -134,6 +136,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     inclina: 0,
     fovExtra: 0,              // graus somados ao fov correndo
     agachado: 0,              // 0..1
+    gatilhoDireito: 0,        // RT, 0..1: andando, ergue o braco (site/braco.js)
   };
 
   function definirModo(andando) {
@@ -360,6 +363,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     const leitura = {
       lx: morta(ax[0] ?? 0), ly: morta(ax[1] ?? 0), rx: morta(ax[2] ?? 0), ry: morta(ax[3] ?? 0),
       sobe: (b[7]?.value ?? 0) - (b[6]?.value ?? 0),
+      rt: b[7]?.value ?? 0,
       correr: !!b[10]?.pressed,
       pulo: !!b[0]?.pressed,                       // A: pula (andando) ou sobe (voando)
       desce: !!b[1]?.pressed || !!b[11]?.pressed,  // B ou clique no analogico direito
@@ -403,6 +407,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
 
   function mover(dt) {
     const gp = lerControle();
+    est.gatilhoDireito = gp?.rt ?? 0;
     if (est.voo) {
       tirarPassada();
       const v = est.voo;
@@ -448,7 +453,8 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     let escalaControle = 1;
     if (gp) {
       const plano = new THREE.Vector3().addScaledVector(frenteChao, -gp.ly).addScaledVector(direita, gp.lx);
-      plano.y += gp.sobe + (gp.pulo ? 1 : 0) - (gp.desce ? 1 : 0);
+      // andando, o RT e do braco: os gatilhos so sobem e descem voando
+      plano.y += (est.andando ? 0 : gp.sobe) + (gp.pulo ? 1 : 0) - (gp.desce ? 1 : 0);
       if (plano.lengthSq() > 0 && dir.lengthSq() === 0) escalaControle = Math.min(1, plano.length());
       dir.add(plano);
     }

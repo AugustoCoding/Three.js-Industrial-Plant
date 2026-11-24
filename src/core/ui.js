@@ -74,7 +74,7 @@ export function criarUI(container, opts) {
       <section><h4>Controle de Xbox</h4>${linhas([
         ['Analógico esq.', 'andar (clique: correr)'], ['Analógico dir.', 'olhar'],
         ['A duas vezes', 'troca entre voar e andar no chão'], ['A', 'voando: sobe · andando: pula'],
-        ['B / clique dir.', 'voando: desce'], ['RT / LT', 'subir / descer (voando)'],
+        ['B / clique dir.', 'voando: desce'], ['RT / LT', 'voando: subir / descer · andando: RT ergue o braço'],
         ['Y', 'esconde o HUD'], ['X', 'chama o companion'], ['LB / RB', 'vista anterior / próxima'],
         ['Direcional', 'ir para o item seguinte da lista'], ['Start', 'esta ajuda'], ['View', 'passeio automático (A pausa, LB/RB pulam)'],
       ])}</section>

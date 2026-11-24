@@ -234,6 +234,28 @@ export const COMPANION = {
   figura: { atletico: true, cabecaEscala: 1.18, listras: [0xc8102e, 0x111111], manga: 'curta', calca: 0x14213d, shorts: true, chinelo: 0x1a1a1a, capacete: null, cabelo: 0x0c0c0c },
 };
 
+/** O braco em primeira pessoa (pedido do autor, 24/11/2026: no modo andar,
+ *  o RT do controle levanta o braco e aponta para a frente, como no
+ *  Minecraft). Tudo no referencial da camera (m; x a direita, y para cima,
+ *  -z para a frente). [ADOTADO] por enquadramento com fov de 50°: em
+ *  repouso a mao fica uns 44° abaixo do centro (fora da tela); apontando,
+ *  uns 7° abaixo, a caminho do centro.
+ *  `ombro` e onde o braco gira; `giroRepouso`/`giroAponta` sao [x, y] em
+ *  graus (x > 0 ergue a mao, y > 0 leva para a esquerda). */
+export const BRACO = {
+  ombro: [0.22, -0.2, -0.06],   // o cotovelo, na verdade: o braco de cima fica fora da tela
+  // [ADOTADO] mao e antebraco de adulto (palma ~8 x 9 cm, indicador ~7 cm)
+  mao: {
+    antebraco: 0.27, raioCotovelo: 0.038, raioPunho: 0.027, manga: 0.1,
+    palma: [0.078, 0.028, 0.09], indicador: 0.072, raioDedo: 0.0088,
+  },
+  pele: 0xd2a07c,
+  camisa: 0x2f6f9f,
+  giroRepouso: [-34, 6],
+  giroAponta: [17, 4],
+  subida: 14,                 // 1/s — rapidez com que levanta e abaixa
+};
+
 /** Botoes da barra que levam a camera ate um veiculo do trafego (`chave` e a
  *  do ator em site/ambiente.js; `tecla`, o atalho). [ADOTADO] */
 export const LOCALIZAR = [

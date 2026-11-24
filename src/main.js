@@ -29,6 +29,7 @@ import { criarAmbiente } from './site/ambiente.js';
 import { criarRotinas } from './site/rotinas.js';
 import { criarOperacoes } from './site/operacoes.js';
 import { criarCompanheiro } from './site/companheiro.js';
+import { criarBraco } from './site/braco.js';
 import { criarPasseio } from './site/passeio.js';
 import { criarNoite } from './site/noite.js';
 import { criarFaixas } from './lib/faixas.js';
@@ -678,6 +679,9 @@ let focoControle = -1;
 const companheiro = criarCompanheiro({ cena, avisar: (t) => ui.avisar(t) });
 cena.scene.add(companheiro.grupo);
 cena.antesDeRenderizar.push((dt) => companheiro.atualizar(dt));
+// o braco em primeira pessoa: andando, o RT ergue e aponta (site/braco.js)
+const braco = criarBraco({ cena });
+cena.antesDeRenderizar.push((dt) => braco.atualizar(dt));
 cena.controls.aoModo = (andando) => ui.avisar(companheiro.chamado && andando ? 'Andando — o companion vem atrás' : andando
   ? 'Andando — A ou Espaço pula · duas vezes: voar'
   : 'Voando — A sobe, B desce · A ou Espaço duas vezes: andar');
