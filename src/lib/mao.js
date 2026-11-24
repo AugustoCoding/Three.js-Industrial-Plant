@@ -8,10 +8,14 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
  * indicador esticado para -z, medio, anelar e minimo dobrados sob a palma e
  * o polegar recolhido junto da base do indicador. Origem no cotovelo.
  *
+ * Com `aponta` falso, o indicador dobra como os outros: a mao fechada que
+ * segura um item (site/roda.js); o cabo passa no oco dos dedos, ao longo
+ * de x, em `centroPunho(M)`.
+ *
  * Devolve duas geometrias fundidas, uma por material: `pele` e `manga`.
  * Medidas `M` (m) vem de BRACO.mao (data/ambiente.js).
  */
-export function geometriaBracoApontando(M) {
+export function geometriaBracoApontando(M, aponta = true) {
   const pele = [], manga = [];
   const Y = new THREE.Vector3(0, 1, 0);
 
@@ -47,12 +51,14 @@ export function geometriaBracoApontando(M) {
 
   // indicador esticado, em duas falanges que afinam
   const xi = -pl / 2 + M.raioDedo;
-  capsula(v(xi, 0.003, zn), v(xi, 0.004, zn - M.indicador * 0.55), M.raioDedo);
-  capsula(v(xi, 0.004, zn - M.indicador * 0.55), v(xi, 0.002, zn - M.indicador), M.raioDedo * 0.88);
+  if (aponta) {
+    capsula(v(xi, 0.003, zn), v(xi, 0.004, zn - M.indicador * 0.55), M.raioDedo);
+    capsula(v(xi, 0.004, zn - M.indicador * 0.55), v(xi, 0.002, zn - M.indicador), M.raioDedo * 0.88);
+  }
 
   // medio, anelar e minimo dobrados para baixo e para tras, sob a palma
-  [0.33, 0.62, 0.9].forEach((f, i) => {
-    const x = -pl / 2 + f * pl, r = M.raioDedo * (1 - 0.07 * (i + 1));
+  (aponta ? [0.33, 0.62, 0.9] : [0.05, 0.33, 0.62, 0.9]).forEach((f, i) => {
+    const x = -pl / 2 + Math.max(f * pl, M.raioDedo), r = M.raioDedo * (1 - 0.07 * (aponta ? i + 1 : i));
     const a = v(x, 0.002, zn), b = v(x, -0.016, zn - 0.02), c = v(x, -pa / 2 - 0.009, zn + 0.006);
     capsula(a, b, r);
     capsula(b, c, r * 0.92);
@@ -67,4 +73,11 @@ export function geometriaBracoApontando(M) {
 
   const fundir = (l) => mergeGeometries(l.map((g) => (g.index ? g.toNonIndexed() : g)), false);
   return { pele: fundir(pele), manga: fundir(manga) };
+}
+
+/** Onde fica o oco da mao fechada (referencial do cotovelo): o cabo de um
+ *  item passa ai, ao longo de x. */
+export function centroPunho(M) {
+  const zn = -M.antebraco - M.palma[2] + 0.01;
+  return new THREE.Vector3(0, -M.palma[1] / 2 - 0.006, zn - 0.006);
 }

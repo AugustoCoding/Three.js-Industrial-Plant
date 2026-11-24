@@ -235,7 +235,7 @@ export const COMPANION = {
 };
 
 /** O braco em primeira pessoa (pedido do autor, 24/11/2026: no modo andar,
- *  o RT do controle levanta o braco e aponta para a frente, como no
+ *  o LT do controle levanta o braco e aponta para a frente, como no
  *  Minecraft). Tudo no referencial da camera (m; x a direita, y para cima,
  *  -z para a frente). [ADOTADO] por enquadramento com fov de 50°: em
  *  repouso a mao fica uns 44° abaixo do centro (fora da tela); apontando,

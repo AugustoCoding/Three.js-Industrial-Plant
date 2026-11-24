@@ -30,6 +30,7 @@ import { criarRotinas } from './site/rotinas.js';
 import { criarOperacoes } from './site/operacoes.js';
 import { criarCompanheiro } from './site/companheiro.js';
 import { criarBraco } from './site/braco.js';
+import { criarRoda } from './site/roda.js';
 import { criarPasseio } from './site/passeio.js';
 import { criarNoite } from './site/noite.js';
 import { criarFaixas } from './lib/faixas.js';
@@ -679,9 +680,13 @@ let focoControle = -1;
 const companheiro = criarCompanheiro({ cena, avisar: (t) => ui.avisar(t) });
 cena.scene.add(companheiro.grupo);
 cena.antesDeRenderizar.push((dt) => companheiro.atualizar(dt));
-// o braco em primeira pessoa: andando, o RT ergue e aponta (site/braco.js)
+// o braco em primeira pessoa: andando, o LT ergue e aponta (site/braco.js)
 const braco = criarBraco({ cena });
 cena.antesDeRenderizar.push((dt) => braco.atualizar(dt));
+// a roda de itens: andando, LB (ou Tab) segurado (site/roda.js)
+const roda = criarRoda({ cena, braco, avisar: (t) => ui.avisar(t) });
+cena.antesDeRenderizar.push((dt) => roda.atualizar(dt));
+cena.controls.aoSoltar = (b) => { if (b === 'LB') roda.fechar(true); };
 cena.controls.aoModo = (andando) => ui.avisar(companheiro.chamado && andando ? 'Andando — o companion vem atrás' : andando
   ? 'Andando — A ou Espaço pula · duas vezes: voar'
   : 'Voando — A sobe, B desce · A ou Espaço duas vezes: andar');
@@ -690,6 +695,7 @@ cena.controls.aoBotao = (b) => {
   if (passeio.botao(b)) return;
   if (b === 'Y') ui.alternarTudo();
   else if (b === 'X') { companheiro.chamar(); ui.botoes.companion?.classList.toggle('ativo', companheiro.chamado); }
+  else if (b === 'LB' && cena.controls.andando) roda.abrir();   // andando, LB e a roda de itens
   else if (b === 'LB' || b === 'RB') {
     const i = (vistaAtual + (b === 'RB' ? 1 : -1) + VISTAS.length) % VISTAS.length;
     irParaVista(VISTAS[i].id);

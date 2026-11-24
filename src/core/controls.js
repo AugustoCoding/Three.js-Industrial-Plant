@@ -24,12 +24,13 @@ import * as THREE from 'three';
  *                              (RT / LT tambem)
  *    andando                -> gravidade, olhos a ALTURA_OLHOS do piso, A pula,
  *                              Ctrl (ou B) agacha; o mouse trava no centro
- *                              da tela (Esc solta, clique trava); o RT nao
- *                              sobe: fica em `estado.gatilhoDireito` e ergue
- *                              o braco (site/braco.js)
+ *                              da tela (Esc solta, clique trava); os
+ *                              gatilhos nao sobem nem descem: LT ergue o
+ *                              braco e RT usa o item (`estado.gatilhoEsquerdo`
+ *                              e `gatilhoDireito`; site/braco.js, roda.js)
  *    clique no analogico esq.-> correr
  *    botoes (A, B, X, Y, LB, RB, direcional, Start, View) -> `aoBotao(nome)`,
- *    na borda de descida; quem chama decide o que cada um faz no HUD
+ *    na borda de descida, e `aoSoltar(nome)` na de subida; quem chama decide o que cada um faz no HUD
  *    (`controls.aoBotao = fn`; `controls.aoControle` avisa o primeiro uso;
  *    `controls.aoModo(andando)` avisa a troca de modo).
  *  Zona morta de 0,15: analogico em repouso nunca e exatamente zero.
@@ -136,7 +137,13 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     inclina: 0,
     fovExtra: 0,              // graus somados ao fov correndo
     agachado: 0,              // 0..1
-    gatilhoDireito: 0,        // RT, 0..1: andando, ergue o braco (site/braco.js)
+    gatilhoDireito: 0,        // RT (ou clique com o mouse travado), 0..1: usa o item na mao (site/roda.js)
+    gatilhoEsquerdo: 0,       // LT (ou botao direito, com o mouse travado): ergue o braco (site/braco.js)
+    usarMouse: false,
+    mirarMouse: false,
+    olharTravado: false,      // roda de itens aberta: analogico direito e mouse escolhem nela
+    mouseRoda: { x: 0, y: 0 },
+    analogicoDireito: { x: 0, y: 0 },
   };
 
   function definirModo(andando) {
@@ -167,6 +174,8 @@ export function criarControlesLivres(camera, dom, opts = {}) {
   });
   document.addEventListener('mousemove', (e) => {
     if (!travado() || !est.ativo) return;
+    // com a roda de itens aberta, o mouse escolhe na roda em vez de olhar
+    if (est.olharTravado) { est.mouseRoda.x += e.movementX; est.mouseRoda.y += e.movementY; return; }
     est.yawAlvo -= e.movementX * sensibilidade;
     est.pitchAlvo = THREE.MathUtils.clamp(est.pitchAlvo - e.movementY * sensibilidade, -LIMITE_PITCH, LIMITE_PITCH);
   });
@@ -279,6 +288,8 @@ export function criarControlesLivres(camera, dom, opts = {}) {
 
   dom.addEventListener('pointerdown', (e) => {
     est.voo = null;                              // mexeu: o voo para
+    // mouse travado: esquerdo = RT (usa o item), direito = LT (ergue e mira)
+    if (est.ativo && travado()) { if (e.button === 0) est.usarMouse = true; else if (e.button === 2) est.mirarMouse = true; return; }
     if (!est.ativo || travado()) return;
     if (est.andando && e.button === 0) { travarMouse(); return; }
     est.arrasto = e.button === 0 ? 'olhar' : 'pan';
@@ -290,6 +301,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
 
   const soltar = (e) => {
     est.arrasto = null;
+    est.usarMouse = est.mirarMouse = false;
     dom.style.cursor = '';
     if (e?.pointerId !== undefined && dom.hasPointerCapture?.(e.pointerId)) {
       dom.releasePointerCapture(e.pointerId);
@@ -364,6 +376,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
       lx: morta(ax[0] ?? 0), ly: morta(ax[1] ?? 0), rx: morta(ax[2] ?? 0), ry: morta(ax[3] ?? 0),
       sobe: (b[7]?.value ?? 0) - (b[6]?.value ?? 0),
       rt: b[7]?.value ?? 0,
+      lt: b[6]?.value ?? 0,
       correr: !!b[10]?.pressed,
       pulo: !!b[0]?.pressed,                       // A: pula (andando) ou sobe (voando)
       desce: !!b[1]?.pressed || !!b[11]?.pressed,  // B ou clique no analogico direito
@@ -372,6 +385,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
       const antes = est.botoes[i];
       if (i === 0 && bt.pressed && !antes) toque();
       if (bt.pressed && !antes && NOMES[i] && i !== 6 && i !== 7) api.aoBotao?.(NOMES[i]);
+      if (!bt.pressed && antes && NOMES[i]) api.aoSoltar?.(NOMES[i]);
       est.botoes[i] = bt.pressed;
     });
     // so analogico e gatilho interrompem um voo: o botao que PEDIU o voo
@@ -407,7 +421,10 @@ export function criarControlesLivres(camera, dom, opts = {}) {
 
   function mover(dt) {
     const gp = lerControle();
-    est.gatilhoDireito = gp?.rt ?? 0;
+    est.gatilhoDireito = Math.max(gp?.rt ?? 0, est.usarMouse && travado() ? 1 : 0);
+    est.gatilhoEsquerdo = Math.max(gp?.lt ?? 0, est.mirarMouse && travado() ? 1 : 0);
+    est.analogicoDireito.x = gp?.rx ?? 0;
+    est.analogicoDireito.y = gp?.ry ?? 0;
     if (est.voo) {
       tirarPassada();
       const v = est.voo;
@@ -420,7 +437,7 @@ export function criarControlesLivres(camera, dom, opts = {}) {
       if (v.t >= 1) est.voo = null;
       return;
     }
-    if (gp && est.ativo) {
+    if (gp && est.ativo && !est.olharTravado) {
       // olhar pelo analogico direito (na vista de planta o norte fica em cima): ~130°/s inclinado ate o fim
       est.yawAlvo -= gp.rx * 2.3 * dt;
       est.pitchAlvo = THREE.MathUtils.clamp(est.pitchAlvo - gp.ry * 1.7 * dt, -LIMITE_PITCH, LIMITE_PITCH);
