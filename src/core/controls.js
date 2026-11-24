@@ -71,7 +71,7 @@ const TOQUE_DUPLO = 0.35;     // s entre dois toques de A (ou Espaco)
  *  - correr e so 30 % mais rapido, e abre o campo de visao;
  *  - Ctrl agachado: anda devagar e baixa os olhos;
  *  - a cabeca balanca com a distancia andada (nao com o tempo): sobe e desce
- *    duas vezes por ciclo, vai de lado e rola um pouco, e o balanco some suave
+ *    a cada passo (sem ir de lado nem rolar), e o balanco some suave
  *    ao parar ou sair do chao.
  * [ADOTADO] valores do jogo: andar 4,317 m/s, correr 5,612, agachado 1,295;
  * pulo de 1,25 m (gravidade 32 m/s², 0,08 b/tick²; v0 = raiz(2·32·1,25)).
@@ -89,9 +89,8 @@ const PASSADA = {
   // reduzidos a pedido para cerca de um terco
   fovCorrida: 1.05,           // campo de visao correndo / andando
   passoBalanco: 1.67,         // m por passo (meio ciclo do balanco)
+  // so sobe e desce: a ida de lado e o rolo do jogo sairam a pedido
   balancoY: 0.025,            // m — descida da cabeca a cada passo
-  balancoX: 0.012,            // m — ida de lado
-  balancoRolo: 0.012,         // rad (~0,7°)
   balancoPitch: 0.008,        // rad (~0,5°)
 };
 const GRAVIDADE = PASSADA.gravidade;
@@ -132,7 +131,6 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     fase: 0,                  // distancia andada / passoBalanco
     balanco: 0,               // 0..1, intensidade atual do balanco
     ofs: new THREE.Vector3(), // deslocamento do balanco aplicado agora
-    rolo: 0,
     inclina: 0,
     fovExtra: 0,              // graus somados ao fov correndo
     agachado: 0,              // 0..1
@@ -234,14 +232,14 @@ export function criarControlesLivres(camera, dom, opts = {}) {
   }
 
   function aplicar() {
-    camera.quaternion.setFromEuler(new THREE.Euler(est.pitch + est.inclina, est.yaw, est.rolo, 'YXZ'));
+    camera.quaternion.setFromEuler(new THREE.Euler(est.pitch + est.inclina, est.yaw, 0, 'YXZ'));
   }
 
   /** Tira o balanco e o fov da corrida (antes de mover a camera por fora). */
   function tirarPassada() {
     camera.position.sub(est.ofs);
     est.ofs.set(0, 0, 0);
-    est.rolo = est.inclina = 0;
+    est.inclina = 0;
     est.balanco = 0;
     if (est.fovExtra) { camera.fov -= est.fovExtra; est.fovExtra = 0; camera.updateProjectionMatrix(); }
   }
@@ -254,14 +252,9 @@ export function criarControlesLivres(camera, dom, opts = {}) {
     est.balanco += (alvo - est.balanco) * (1 - Math.exp(-10 * dt));
     if (est.andando && est.noChao) est.fase += (vChao * dt) / P.passoBalanco;
     const b = est.balanco;
-    const s = Math.sin(est.fase * Math.PI);
-    const c = Math.cos(est.fase * Math.PI);
-    // lado: um ciclo a cada dois passos; altura: desce a cada passo
-    direita.set(Math.cos(est.yaw), 0, -Math.sin(est.yaw));
-    est.ofs.copy(direita).multiplyScalar(s * P.balancoX * b);
-    est.ofs.y = -Math.abs(c) * P.balancoY * b - est.agachado * P.baixaAgachado;
+    // a cabeca desce a cada passo
+    est.ofs.set(0, -Math.abs(Math.cos(est.fase * Math.PI)) * P.balancoY * b - est.agachado * P.baixaAgachado, 0);
     camera.position.add(est.ofs);
-    est.rolo = s * P.balancoRolo * b;
     est.inclina = -Math.abs(Math.cos(est.fase * Math.PI - 0.2)) * P.balancoPitch * b;
     // campo de visao: abre correndo, de verdade (embalo acima do de andar)
     const base = camera.fov - est.fovExtra;
